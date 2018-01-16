@@ -1,4 +1,4 @@
-# Debian 9 (Stretch) Mongodb 3.6 Image
+# Debian 9 (Stretch) Mongodb 3.6 (with Replication) Image
 
 ## Description
 
