@@ -71,17 +71,21 @@ EOF
 
 function create_keyfile_if_missing {
     # Taken from https://docs.mongodb.com/v2.6/tutorial/deploy-replica-set-with-auth/
-    if [ ! -f ${MONGO_SHARE}/mongodb-file ]; then
-        openssl rand -base64 741 > ${MONGO_SHARE}/mongodb-keyfile
-        chmod 600 ${MONGO_SHARE}/mongodb-keyfile
+    SHARE_KEYFILE=${MONGO_SHARE}/mongodb-keyfile
+    LOCAL_KEYFILE=${MONGO_LOCAL}/mongodb-keyfile
+    if [ ! -f ${SHARE_KEYFILE} ]; then
+        openssl rand -base64 741 > ${SHARE_KEYFILE}
+        chmod 600 ${SHARE_KEYFILE}
     fi
+    cp ${SHARE_KEYFILE} ${LOCAL_KEYFILE}
+    chmod 600 ${LOCAL_KEYFILE}
 }
 
 function configure_supervisor {
     [ -z $REPLICA_SET ] && REPLICA_SET="rs0"
     echo "Mongo will start in replica set '$REPLICA_SET'"
     sed -i -e "s|<REPLICA_SET>|$REPLICA_SET|" \
-           -e "s|<MONGO_SHARE>|$MONGO_SHARE|" /etc/supervisor/conf.d/mongod.conf
+           -e "s|<MONGO_LOCAL>|$MONGO_LOCAL|" /etc/supervisor/conf.d/mongod.conf
 }
 
 start_mongod

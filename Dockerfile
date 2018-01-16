@@ -12,15 +12,18 @@ RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
 	&& rm -rf /var/lib/apt/lists/* \
 	&& mkdir -p /var/log/mongodb \
 				/mongoshare \
+				/mongolocal \
 	&& chmod -R 777 /var/log/mongodb \
 					/var/lib/mongodb \
 					/etc/supervisor/conf.d \
 					/mongoshare \
-	&& chmod +x /usr/local/bin/setup_replica \
-	&& rm -f ~/.rnd
+					/mongolocal \
+	&& chmod +x /usr/local/bin/setup_replica
 
 ENV ADMINUSER=defaultadminuser \
 	ADMINPASS=defaultadminpass \
 	REPLICA_SET=rs0 \
 	MONGO_SHARE=/mongoshare \
-	HOME=/mongoshare
+	HOME=/mongoshare \
+	MONGO_SCRIPTS=/usr/local/mongo_scripts \
+	MONGO_LOCAL=/mongolocal

@@ -25,70 +25,128 @@ function wait_for_mongod_to_start {
 }
 
 function lock {
-    LOCKFILE=${MONGO_SHARE}/alockfile
     exec 200> ${LOCKFILE}
     flock -n 200 && return 0 || return 1
 }
 
-function initiate_replica {
-    LOCKFILE=${MONGO_SHARE}/alockfile
-    GOT_LOCK=0
-    SECONDARY=0
-    HOSTNAME=$(hostname)
-    while [ $GOT_LOCK -eq 0 ]; do
-        lock
-        if [ $? -eq 0 ] ; then
-            echo 'Got lock'
-            GOT_LOCK=1
-            # This folder is where we heartbeat our hostnames
-            for HOSTPATH in $(find ${REPLICA_SET_HOME} -type f -mmin -1); do
-                SECONDARY=1
-                MONGO_HOST=$(basename $HOSTPATH)
-                cat > /tmp/initiate_replica.js << EOF
-conn = new Mongo("$MONGO_HOST");
-db = conn.getDB("admin");
-// wrong user for remote db... db.auth("$ADMINUSER", "$ADMINPASS");
-var replica_state = rs.isMaster();
-if (replica_state['ismaster'] == true) {
-    rs.add("$HOSTNAME")
-    printjson("INFO: Added $HOSTNAME to $MONGO_HOST")
+function unlock {
+    rm -f $LOCKFILE
+    echo "Released lock"
 }
-EOF
-            break
+
+function setup_mongo_js_scripts {
+    sed -i -e "s|<ADMINUSER>|$ADMINUSER|" \
+           -e "s|<ADMINPASS>|$ADMINPASS|" $MONGO_SCRIPTS/*.js
+}
+
+function purge_dead_hosts {
+    for OLD_HOSTPATH in $(find ${REPLICA_SET_HOME} -type f -mmin +1)
+    do
+        echo "Removing old heartbeat file for dead host "$(basename $OLD_HOSTPATH)
+        rm -f $OLD_HOSTPATH
+        OLD_HOST=$(basename ${OLD_HOSTPATH})
+    done
+    mongo ${MONGO_SCRIPTS}/purge_old_hosts.js
+}
+
+function maybe_become_primary {
+    PRIMARY_COUNTER=$1
+    lock
+    if [ $? -eq 0 ] ; then
+        echo "Got lock"
+        purge_dead_hosts
+
+        HOST_COUNT=$(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $HOSTNAME | wc -l)
+        if [ $HOST_COUNT -eq 0 ]; then
+            echo "No other hosts appear to be alive, so setting myself as primary"
+            mongo ${MONGO_SCRIPTS}/set_as_primary.js
+        elif [ $PRIMARY_COUNTER -gt 3 ]; then
+            echo "No other hosts appear to be primary, so setting myself as primary and restarting other hosts"
+            for SECONDARY_HOSTPATH in $(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $HOSTNAME)
+            do
+                SECONDARY_HOST=$(basename ${SECONDARY_HOSTPATH})
+                echo "Asking host $SECONDARY_HOST to restart"
+                touch ${MONGO_SHARE}/force_restart_${SECONDARY_HOST}
             done
-        else
-            echo 'No lock'
-            sleep 1
+            mongo ${MONGO_SCRIPTS}/set_as_primary.js
+        fi
+
+    fi
+    unlock
+}
+
+function get_replica_status {
+    export STATUS=$(mongo ${MONGO_SCRIPTS}/get_replica_status.js | egrep "PRIMARY|SECONDARY|UNKNOWN" | sed 's/"//g')
+    echo "STATUS is $STATUS"
+}
+
+function add_secondaries {
+    mongo ${MONGO_SCRIPTS}/get_members.js > /tmp/current_members.txt
+
+    for CURRENT_HOSTPATH in $(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $HOSTNAME)
+    do
+        CURRENT_HOST=$(basename ${CURRENT_HOSTPATH})
+        echo "Found heartbeat file for host $CURRENT_HOST"
+        grep -q $CURRENT_HOST /tmp/current_members.txt
+        if [ $? -eq 1 ]; then
+            echo "Host '$CURRENT_HOST' is not a member - adding it"
+            sed "s/<HOSTNAME>/$CURRENT_HOST/" ${MONGO_SCRIPTS}/add_host.js > /tmp/add_host.js
+            mongo /tmp/add_host.js
         fi
     done
+}
 
-    rm -f ${LOCKFILE}
-    echo "Removed lockfile"
-
-    if [ $SECONDARY -eq 0 ]; then
-        echo "Configuring as primary"
-        cat > /tmp/initiate_replica.js << EOF
-conn = new Mongo();
-db = conn.getDB("admin");
-db.auth("$ADMINUSER", "$ADMINPASS");
-rs.initiate();
-EOF
-
-        mongo /tmp/initiate_replica.js
+function do_primary_stuff {
+    lock
+    if [ $? -eq 0 ] ; then
+        echo "Got lock"
+        purge_dead_hosts
+        add_secondaries
     fi
+    unlock
 }
 
 function hearbeat {
-    HOSTPATH=$REPLICA_SET_HOME/$(hostname)
+    PRIMARY_COUNTER=0
     while [ 1 ]; do
+        # Tell all hosts we are alive...
         touch $HOSTPATH
+        # Work out what our responsibilities are
+        get_replica_status
+        if [ $STATUS == "PRIMARY" ]; then
+            do_primary_stuff
+            PRIMARY_COUNTER=0
+        elif [ $STATUS == "UNKNOWN" ]; then
+            echo "Not PRIMARY or SECONDARY yet"
+            echo "PRIMARY_COUNTER: $PRIMARY_COUNTER"
+
+            # No need to restart if we haven't joined a previous rs
+            # Just restart the counter
+            if [ -f ${MONGO_SHARE}/force_restart_${HOSTNAME} ]; then
+                rm -f ${MONGO_SHARE}/force_restart_${HOSTNAME}
+                PRIMARY_COUNTER=0
+            fi
+
+            maybe_become_primary $PRIMARY_COUNTER
+            PRIMARY_COUNTER=$(expr $PRIMARY_COUNTER + 1)
+        else
+            # SECONDARY
+            if [ -f ${MONGO_SHARE}/force_restart_${HOSTNAME} ]; then
+                rm -f ${MONGO_SHARE}/force_restart_${HOSTNAME}
+                kill 1
+            fi
+            PRIMARY_COUNTER=0
+        fi
         sleep 30
     done
 }
 
-export REPLICA_SET_HOME=${MONGO_SHARE}/${REPLICA_SET}
+REPLICA_SET_HOME=${MONGO_SHARE}/${REPLICA_SET}
 mkdir -p ${REPLICA_SET_HOME}
+HOSTNAME=$(hostname)
+HOSTPATH=${REPLICA_SET_HOME}/${HOSTNAME}
+LOCKFILE=${MONGO_SHARE}/alockfile
 
+setup_mongo_js_scripts
 wait_for_mongod_to_start
-initiate_replica
 hearbeat
