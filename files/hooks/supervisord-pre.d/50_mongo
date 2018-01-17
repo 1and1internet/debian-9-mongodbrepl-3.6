@@ -45,23 +45,26 @@ db = conn.getDB("admin");
 var users = db.getUsers();
 // printjson(users);
 
+var exists = false;
 for (var i = 0; i < users.length; i++) {
     if (users[i]["user"] == "$ADMINUSER") {
-        printjson("Deleting '$ADMINUSER' user in case password has changed");
-        db.dropUser("$ADMINUSER");
+        exists = true;
         break;
     }
 }
 
-printjson("Creating '$ADMINUSER' user");
-db.createUser(
-    {
-        user: "$ADMINUSER",
-        pwd: "$ADMINPASS",
-        roles: [ { role: "root", db: "admin" } ]
-  }
-);
-
+if (!exists) {
+    printjson("Creating '$ADMINUSER' user");
+    db.createUser(
+        {
+            user: "$ADMINUSER",
+            pwd: "$ADMINPASS",
+            roles: [ { role: "root", db: "admin" } ]
+      }
+    );
+} else {
+    printjson("Admin user '$ADMINUSER' exists, not creating");
+}
 EOF
 
     mongo /tmp/setup.js
@@ -83,7 +86,7 @@ function configure_supervisor {
     [ -z $REPLICA_SET ] && REPLICA_SET="rs0"
     echo "Mongo will start in replica set '$REPLICA_SET'"
     sed -i -e "s|<REPLICA_SET>|$REPLICA_SET|" \
-           -e "s|<MONGO_LOCAL>|$MONGO_LOCAL|" /etc/supervisor/conf.d/mongod.conf
+           -e "s|<MONGO_SHARE>|$MONGO_SHARE|" /etc/supervisor/conf.d/mongod.conf
 }
 
 start_mongod
