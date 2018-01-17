@@ -45,25 +45,23 @@ db = conn.getDB("admin");
 var users = db.getUsers();
 // printjson(users);
 
-var exists = false;
 for (var i = 0; i < users.length; i++) {
     if (users[i]["user"] == "$ADMINUSER") {
-        exists = true;
+        printjson("Deleting '$ADMINUSER' user in case password has changed");
+        db.dropUser("$ADMINUSER");
+        break;
     }
 }
 
-if (!exists) {
-    printjson("Creating '$ADMINUSER' user");
-    db.createUser(
-        {
-            user: "$ADMINUSER",
-            pwd: "$ADMINPASS",
-            roles: [ { role: "root", db: "admin" } ]
-      }
-    );
-} else {
-    printjson("Admin user '$ADMINUSER' exists, not creating");
-}
+printjson("Creating '$ADMINUSER' user");
+db.createUser(
+    {
+        user: "$ADMINUSER",
+        pwd: "$ADMINPASS",
+        roles: [ { role: "root", db: "admin" } ]
+  }
+);
+
 EOF
 
     mongo /tmp/setup.js

@@ -40,13 +40,15 @@ function setup_mongo_js_scripts {
 }
 
 function purge_dead_hosts {
+    FOUND=0
     for OLD_HOSTPATH in $(find ${REPLICA_SET_HOME} -type f -mmin +1)
     do
         echo "Removing old heartbeat file for dead host "$(basename $OLD_HOSTPATH)
         rm -f $OLD_HOSTPATH
         OLD_HOST=$(basename ${OLD_HOSTPATH})
+        FOUND=1
     done
-    mongo ${MONGO_SCRIPTS}/purge_old_hosts.js
+    [ $FOUND -eq 1 ] && mongo ${MONGO_SCRIPTS}/purge_old_hosts.js
 }
 
 function maybe_become_primary {
@@ -62,9 +64,9 @@ function maybe_become_primary {
             mongo ${MONGO_SCRIPTS}/set_as_primary.js
         elif [ $PRIMARY_COUNTER -gt 3 ]; then
             echo "No other hosts appear to be primary, so setting myself as primary and restarting other hosts"
-            for SECONDARY_HOSTPATH in $(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $HOSTNAME)
+            for SECONDARY_HOSTPATH in $(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $SERVICE_IP)
             do
-                SECONDARY_HOST=$(basename ${SECONDARY_HOSTPATH})
+                SECONDARY_HOST=$(cat ${SECONDARY_HOSTPATH})
                 echo "Asking host $SECONDARY_HOST to restart"
                 touch ${MONGO_SHARE}/force_restart_${SECONDARY_HOST}
             done
@@ -85,7 +87,7 @@ function add_secondaries {
 
     for CURRENT_HOSTPATH in $(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $HOSTNAME)
     do
-        CURRENT_HOST=$(basename ${CURRENT_HOSTPATH})
+        CURRENT_HOST=$(cat ${CURRENT_HOSTPATH})
         echo "Found heartbeat file for host $CURRENT_HOST"
         grep -q $CURRENT_HOST /tmp/current_members.txt
         if [ $? -eq 1 ]; then
@@ -109,8 +111,8 @@ function do_primary_stuff {
 function hearbeat {
     PRIMARY_COUNTER=0
     while [ 1 ]; do
-        # Tell all hosts we are alive...
-        touch $HOSTPATH
+        # Tell all hosts we are alive, and where to find us...
+        echo $SERVICE_IP > $HOSTPATH
         # Work out what our responsibilities are
         get_replica_status
         if [ $STATUS == "PRIMARY" ]; then
@@ -122,8 +124,8 @@ function hearbeat {
 
             # No need to restart if we haven't joined a previous rs
             # Just restart the counter
-            if [ -f ${MONGO_SHARE}/force_restart_${HOSTNAME} ]; then
-                rm -f ${MONGO_SHARE}/force_restart_${HOSTNAME}
+            if [ -f ${MONGO_SHARE}/force_restart_${SERVICE_IP} ]; then
+                rm -f ${MONGO_SHARE}/force_restart_${SERVICE_IP}
                 PRIMARY_COUNTER=0
             fi
 
@@ -131,8 +133,8 @@ function hearbeat {
             PRIMARY_COUNTER=$(expr $PRIMARY_COUNTER + 1)
         else
             # SECONDARY
-            if [ -f ${MONGO_SHARE}/force_restart_${HOSTNAME} ]; then
-                rm -f ${MONGO_SHARE}/force_restart_${HOSTNAME}
+            if [ -f ${MONGO_SHARE}/force_restart_${SERVICE_IP} ]; then
+                rm -f ${MONGO_SHARE}/force_restart_${SERVICE_IP}
                 kill 1
             fi
             PRIMARY_COUNTER=0
@@ -143,7 +145,10 @@ function hearbeat {
 
 REPLICA_SET_HOME=${MONGO_SHARE}/${REPLICA_SET}
 mkdir -p ${REPLICA_SET_HOME}
-HOSTNAME=$(hostname | cut -d \- -f 1)
+HOSTNAME=$(hostname)
+SHORT_HOSTNAME=$(hostname | cut -d \- -f 1)
+SERVICE_IP=$(set | grep -i ${SHORT_HOSTNAME}_SERVICE_HOST | cut -d = -f2)
+[ -z $SERVICE_IP ] && SERVICE_IP=$HOSTNAME # Fallback for local testing
 HOSTPATH=${REPLICA_SET_HOME}/${HOSTNAME}
 LOCKFILE=${MONGO_SHARE}/alockfile
 
