@@ -78,8 +78,8 @@ function create_keyfile_if_missing {
         openssl rand -base64 741 > ${SHARE_KEYFILE}
         chmod 600 ${SHARE_KEYFILE}
     fi
-    cp ${SHARE_KEYFILE} ${LOCAL_KEYFILE}
-    chmod 600 ${LOCAL_KEYFILE}
+    #cp ${SHARE_KEYFILE} ${LOCAL_KEYFILE}
+    #chmod 600 ${LOCAL_KEYFILE}
 }
 
 function configure_supervisor {
