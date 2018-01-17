@@ -143,7 +143,7 @@ function hearbeat {
 
 REPLICA_SET_HOME=${MONGO_SHARE}/${REPLICA_SET}
 mkdir -p ${REPLICA_SET_HOME}
-HOSTNAME=$(hostname)
+HOSTNAME=$(hostname | cut -d \- -f 1)
 HOSTPATH=${REPLICA_SET_HOME}/${HOSTNAME}
 LOCKFILE=${MONGO_SHARE}/alockfile
 
