@@ -56,6 +56,16 @@ function initiate_rs {
         -e "s|<REPLICA_SET>|$REPLICA_SET|" \
             ${MONGO_SCRIPTS}/set_as_primary.js > /tmp/set_as_primary.js
     mongo /tmp/set_as_primary.js
+    get_replica_status
+    COUNT=$1
+    while [ $STATUS != "PRIMARY" ] && [ $COUNT -gt 0 ]
+    do
+        sleep 1
+        echo "Not yet primary, retrying..."
+        mongo /tmp/set_as_primary.js
+        get_replica_status
+        COUNT=$(expr $COUNT - 1)
+    done
 }
 
 function maybe_become_primary {
@@ -68,7 +78,7 @@ function maybe_become_primary {
         HOST_COUNT=$(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $HOSTNAME | wc -l)
         if [ $HOST_COUNT -eq 0 ]; then
             echo "No other hosts appear to be alive, so setting myself as primary"
-            initiate_rs
+            initiate_rs 20
         elif [ $PRIMARY_COUNTER -gt 3 ]; then
             echo "No other hosts appear to be primary, so setting myself as primary and restarting other hosts"
             for SECONDARY_HOSTPATH in $(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $SHORT_HOSTNAME)
@@ -77,7 +87,7 @@ function maybe_become_primary {
                 echo "Asking host $SECONDARY_HOST to restart"
                 touch ${MONGO_SHARE}/force_restart_${SECONDARY_HOST}
             done
-            initiate_rs
+            initiate_rs 1
         fi
 
     fi
