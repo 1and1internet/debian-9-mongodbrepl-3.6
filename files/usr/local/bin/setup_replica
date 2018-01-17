@@ -51,6 +51,13 @@ function purge_dead_hosts {
     [ $FOUND -eq 1 ] && mongo ${MONGO_SCRIPTS}/purge_old_hosts.js
 }
 
+function initiate_rs {
+    sed -e "s|<HOSTNAME>|$SHORT_HOSTNAME|" \
+        -e "s|<REPLICA_SET>|$REPLICA_SET|" \
+            ${MONGO_SCRIPTS}/set_as_primary.js > /tmp/set_as_primary.js
+    mongo /tmp/set_as_primary.js
+}
+
 function maybe_become_primary {
     PRIMARY_COUNTER=$1
     lock
@@ -61,7 +68,7 @@ function maybe_become_primary {
         HOST_COUNT=$(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $HOSTNAME | wc -l)
         if [ $HOST_COUNT -eq 0 ]; then
             echo "No other hosts appear to be alive, so setting myself as primary"
-            mongo ${MONGO_SCRIPTS}/set_as_primary.js
+            initiate_rs
         elif [ $PRIMARY_COUNTER -gt 3 ]; then
             echo "No other hosts appear to be primary, so setting myself as primary and restarting other hosts"
             for SECONDARY_HOSTPATH in $(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $SHORT_HOSTNAME)
@@ -70,7 +77,7 @@ function maybe_become_primary {
                 echo "Asking host $SECONDARY_HOST to restart"
                 touch ${MONGO_SHARE}/force_restart_${SECONDARY_HOST}
             done
-            mongo ${MONGO_SCRIPTS}/set_as_primary.js
+            initiate_rs
         fi
 
     fi
