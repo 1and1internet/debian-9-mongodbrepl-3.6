@@ -64,7 +64,7 @@ function maybe_become_primary {
             mongo ${MONGO_SCRIPTS}/set_as_primary.js
         elif [ $PRIMARY_COUNTER -gt 3 ]; then
             echo "No other hosts appear to be primary, so setting myself as primary and restarting other hosts"
-            for SECONDARY_HOSTPATH in $(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $SERVICE_IP)
+            for SECONDARY_HOSTPATH in $(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $SHORT_HOSTNAME)
             do
                 SECONDARY_HOST=$(cat ${SECONDARY_HOSTPATH})
                 echo "Asking host $SECONDARY_HOST to restart"
@@ -109,10 +109,15 @@ function do_primary_stuff {
 }
 
 function hearbeat {
+    if [ -f /tmp/.usercreated ]; then
+        rm /tmp/.usercreated
+        maybe_become_primary 99
+    fi
+
     PRIMARY_COUNTER=0
     while [ 1 ]; do
         # Tell all hosts we are alive, and where to find us...
-        echo $SERVICE_IP > $HOSTPATH
+        echo $SHORT_HOSTNAME > $HOSTPATH
         # Work out what our responsibilities are
         get_replica_status
         if [ $STATUS == "PRIMARY" ]; then
@@ -124,8 +129,8 @@ function hearbeat {
 
             # No need to restart if we haven't joined a previous rs
             # Just restart the counter
-            if [ -f ${MONGO_SHARE}/force_restart_${SERVICE_IP} ]; then
-                rm -f ${MONGO_SHARE}/force_restart_${SERVICE_IP}
+            if [ -f ${MONGO_SHARE}/force_restart_${SHORT_HOSTNAME} ]; then
+                rm -f ${MONGO_SHARE}/force_restart_${SHORT_HOSTNAME}
                 PRIMARY_COUNTER=0
             fi
 
@@ -133,8 +138,8 @@ function hearbeat {
             PRIMARY_COUNTER=$(expr $PRIMARY_COUNTER + 1)
         else
             # SECONDARY
-            if [ -f ${MONGO_SHARE}/force_restart_${SERVICE_IP} ]; then
-                rm -f ${MONGO_SHARE}/force_restart_${SERVICE_IP}
+            if [ -f ${MONGO_SHARE}/force_restart_${SHORT_HOSTNAME} ]; then
+                rm -f ${MONGO_SHARE}/force_restart_${SHORT_HOSTNAME}
                 kill 1
             fi
             PRIMARY_COUNTER=0
@@ -146,9 +151,9 @@ function hearbeat {
 REPLICA_SET_HOME=${MONGO_SHARE}/${REPLICA_SET}
 mkdir -p ${REPLICA_SET_HOME}
 HOSTNAME=$(hostname)
-SHORT_HOSTNAME=$(hostname | cut -d \- -f 1)
-SERVICE_IP=$(set | grep -i ${SHORT_HOSTNAME}_SERVICE_HOST | cut -d = -f2)
-[ -z $SERVICE_IP ] && SERVICE_IP=$HOSTNAME # Fallback for local testing
+SHORT_HOSTNAME=$(hostname | cut -d \- -f 1) # mongo1-1-1234 becomes mongo1
+#SERVICE_IP=$(set | grep -i ${SHORT_HOSTNAME}_SERVICE_HOST | cut -d = -f2)
+#[ -z $SERVICE_IP ] && SERVICE_IP=$HOSTNAME # Fallback for local testing
 HOSTPATH=${REPLICA_SET_HOME}/${HOSTNAME}
 LOCKFILE=${MONGO_SHARE}/alockfile
 
