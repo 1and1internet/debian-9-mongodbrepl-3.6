@@ -52,7 +52,7 @@ function initiate_rs {
     COUNT=$1
     while [ $STATUS != "PRIMARY" ] && [ $COUNT -gt 0 ]
     do
-        sleep 1
+        sleep 2
         echo "Not yet primary, retrying..."
         mongo /tmp/set_as_primary.js
         get_replica_status
@@ -116,12 +116,22 @@ function try_unknown_fix {
     mongo ${MONGO_SCRIPTS}/shutdown_server.js
 }
 
-function hearbeat {
+function first_primary {
     if [ -f /tmp/.usercreated ]; then
         rm /tmp/.usercreated
         maybe_become_primary
+        rm ${MONGO_SHARE}/wait_for_leader
+    else
+        echo "Waiting for other host to become primary"
+        while [ -f ${MONGO_SHARE}/wait_for_leader ]
+        do
+            echo -n .
+            sleep 1
+        done
     fi
+}
 
+function hearbeat {
     WAIT_DURATION=10
     UNKNOWN_COUNTER=0
     while [ 1 ]; do
@@ -159,4 +169,5 @@ LOCKFILE=${MONGO_SHARE}/alockfile
 
 setup_mongo_js_scripts
 wait_for_mongod_to_start
+first_primary
 hearbeat

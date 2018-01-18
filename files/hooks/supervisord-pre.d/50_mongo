@@ -74,15 +74,16 @@ EOF
             mongo /tmp/setup.js | grep -q "Successfully added user"
             if [ $? -eq 0 ]; then
                 touch /tmp/.usercreated
+                touch ${MONGO_SHARE}/wait_for_leader
                 USER_CREATED=1
             fi
         fi
     fi
 
-    #if [ $USER_CREATED  -eq 0 ]; then
-    #    echo "Somebody else created the user, pausing to give them time to initialise"
-    #    sleep 5
-    #fi
+    if [ $USER_CREATED  -eq 0 ]; then
+        echo "Somebody else created the admin user"
+        #sleep 5
+    fi
 }
 
 function userlock {
