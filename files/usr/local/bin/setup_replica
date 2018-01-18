@@ -1,17 +1,9 @@
 #!/usr/bin/env bash
 
 function wait_for_mongod_logline {
-    # Make sure log file exists first
-    MAXLOOPS=50
-    while [ ! -f /var/log/mongodb/mongod.log ] && [ $MAXLOOPS -gt 0 ]; do
-        sleep 0.1
-        MAXLOOPS=$(expr $MAXLOOPS - 1)
-        echo -n "!"
-    done
-
     # Wait for log line
     LOGLINE=$1
-    MAXLOOPS=50
+    MAXLOOPS=100
     while [ $(tail -5 /var/log/mongodb/mongod.log | grep -q "$LOGLINE" && echo "Y" || echo "N") == "N" ] && [ $MAXLOOPS -gt 0 ]; do
         sleep 0.1
         MAXLOOPS=$(expr $MAXLOOPS - 1)

@@ -79,10 +79,10 @@ EOF
         fi
     fi
 
-    if [ $USER_CREATED  -eq 0 ]; then
-        echo "Somebody else created the user, pausing to give them time to initialise"
-        sleep 5
-    fi
+    #if [ $USER_CREATED  -eq 0 ]; then
+    #    echo "Somebody else created the user, pausing to give them time to initialise"
+    #    sleep 5
+    #fi
 }
 
 function userlock {
