@@ -51,16 +51,6 @@ function purge_dead_hosts {
     [ $FOUND -eq 1 ] && mongo ${MONGO_SCRIPTS}/purge_old_hosts.js
 }
 
-function handle_remove_requests {
-    for HOSTREMOVEFILE in $(ls ${MONGO_SHARE}/primary_remove_* 2>/dev/null)
-    do
-        OTHER_HOSTNAME=$(cat $HOSTREMOVEFILE)
-        sed 's|<HOSTNAME>|$OTHER_HOSTNAME|' ${MONGO_SCRIPTS}/del_host.js > /tmp/del_host.js
-        mongo /tmp/del_host.js
-        rm -f $HOSTREMOVEFILE
-    done
-}
-
 function initiate_rs {
     sed -e "s|<HOSTNAME>|$SHORT_HOSTNAME|" \
         -e "s|<REPLICA_SET>|$REPLICA_SET|" \
@@ -126,14 +116,12 @@ function do_primary_stuff {
         echo "Got lock"
         purge_dead_hosts
         add_secondaries
-        handle_remove_requests
     fi
     unlock
 }
 
-function try_fix {
+function try_unknown_fix {
     mongo ${MONGO_SCRIPTS}/shutdown_server.js
-    echo $SHORT_HOSTNAME > ${MONGO_SHARE}/primary_remove_${SHORT_HOSTNAME}
 }
 
 function hearbeat {
@@ -152,12 +140,12 @@ function hearbeat {
         if [ $STATUS == "PRIMARY" ]; then
             do_primary_stuff
         elif [ $STATUS == "UNKNOWN" ]; then
-            if [ $UNKNOWN_COUNTER -lt 10 ]; then
+            if [ $UNKNOWN_COUNTER -lt 6 ]; then
                 echo "Not PRIMARY or SECONDARY yet"
                 maybe_become_primary
                 UNKNOWN_COUNTER=$(expr $UNKNOWN_COUNTER + 1)
             else
-                try_fix
+                try_unknown_fix
                 UNKNOWN_COUNTER=0
             fi
         else
