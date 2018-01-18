@@ -69,7 +69,6 @@ function initiate_rs {
 }
 
 function maybe_become_primary {
-    PRIMARY_COUNTER=$1
     lock
     if [ $? -eq 0 ] ; then
         echo "Got lock"
@@ -78,16 +77,7 @@ function maybe_become_primary {
         HOST_COUNT=$(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $HOSTNAME | wc -l)
         if [ $HOST_COUNT -eq 0 ]; then
             echo "No other hosts appear to be alive, so setting myself as primary"
-            initiate_rs 20
-        elif [ $PRIMARY_COUNTER -gt 3 ]; then
-            echo "No other hosts appear to be primary, so setting myself as primary and restarting other hosts"
-            for SECONDARY_HOSTPATH in $(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $SHORT_HOSTNAME)
-            do
-                SECONDARY_HOST=$(cat ${SECONDARY_HOSTPATH})
-                echo "Asking host $SECONDARY_HOST to restart"
-                touch ${MONGO_SHARE}/force_restart_${SECONDARY_HOST}
-            done
-            initiate_rs 1
+            initiate_rs 60
         fi
 
     fi
@@ -128,10 +118,10 @@ function do_primary_stuff {
 function hearbeat {
     if [ -f /tmp/.usercreated ]; then
         rm /tmp/.usercreated
-        maybe_become_primary 99
+        maybe_become_primary
     fi
 
-    PRIMARY_COUNTER=0
+    WAIT_DURATION=10
     while [ 1 ]; do
         # Tell all hosts we are alive, and where to find us...
         echo $SHORT_HOSTNAME > $HOSTPATH
@@ -139,29 +129,14 @@ function hearbeat {
         get_replica_status
         if [ $STATUS == "PRIMARY" ]; then
             do_primary_stuff
-            PRIMARY_COUNTER=0
         elif [ $STATUS == "UNKNOWN" ]; then
             echo "Not PRIMARY or SECONDARY yet"
-            echo "PRIMARY_COUNTER: $PRIMARY_COUNTER"
-
-            # No need to restart if we haven't joined a previous rs
-            # Just restart the counter
-            if [ -f ${MONGO_SHARE}/force_restart_${SHORT_HOSTNAME} ]; then
-                rm -f ${MONGO_SHARE}/force_restart_${SHORT_HOSTNAME}
-                PRIMARY_COUNTER=0
-            fi
-
-            maybe_become_primary $PRIMARY_COUNTER
-            PRIMARY_COUNTER=$(expr $PRIMARY_COUNTER + 1)
+            maybe_become_primary
         else
             # SECONDARY
-            if [ -f ${MONGO_SHARE}/force_restart_${SHORT_HOSTNAME} ]; then
-                rm -f ${MONGO_SHARE}/force_restart_${SHORT_HOSTNAME}
-                kill 1
-            fi
-            PRIMARY_COUNTER=0
+            WAIT_DURATION=30
         fi
-        sleep 30
+        sleep $WAIT_DURATION
     done
 }
 
