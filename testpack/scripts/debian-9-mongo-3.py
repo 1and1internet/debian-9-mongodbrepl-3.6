@@ -24,7 +24,8 @@ class Test1and1MongoImage(unittest.TestCase):
             network_mode="bridge",
             user=10000,
             ports={8080:8080},
-            working_dir="/var/www"
+            working_dir="/var/www",
+            environment={"FIRST_PRIMARY": "true"}
         )
 
         details = docker.APIClient().inspect_container(container=Test1and1MongoImage.container.id)

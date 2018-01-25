@@ -44,8 +44,10 @@ function add_secondaries {
     do
         grep -q $SECONDARY /tmp/current_members.txt
         if [ $? -eq 1 ]; then
-            echo "Host '$SECONDARY' is not a member - adding it"
-            sed "s/<HOSTNAME>/$SECONDARY/" ${MONGO_SCRIPTS}/add_host.js > /tmp/add_host.js
+            SHORT_SECONDARY=$(echo $SECONDARY | cut -d \- -f 1)
+            SHORT_SECONDARY=${SHORT_SECONDARY,,}
+            echo "Host '$SHORT_SECONDARY' is not a member - adding it"
+            sed "s/<HOSTNAME>/$SHORT_SECONDARY/" ${MONGO_SCRIPTS}/add_host.js > /tmp/add_host.js
             mongo /tmp/add_host.js
         fi
     done
