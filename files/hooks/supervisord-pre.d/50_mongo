@@ -29,7 +29,7 @@ function wait_for_mongod_to_stop {
 }
 
 function start_mongod {
-    /usr/bin/mongod -f /etc/mongod.conf &
+    /usr/bin/mongod -f /etc/mongodlogfile.conf &
     wait_for_mongod_to_start
 }
 
@@ -39,11 +39,7 @@ function stop_mongod {
 }
 
 function ensure_adminuser_exists {
-    USER_CREATED=0
-    if [ ! -f ${LOCKFILE} ]; then
-        userlock
-        if [ $? -eq 0 ]; then
-            cat > /tmp/setup.js << EOF
+    cat > /tmp/setup.js << EOF
 conn = new Mongo();
 db = conn.getDB("admin");
 var users = db.getUsers();
@@ -71,24 +67,13 @@ if (!exists) {
 }
 EOF
 
-            mongo /tmp/setup.js | grep -q "Successfully added user"
-            if [ $? -eq 0 ]; then
-                touch /tmp/.usercreated
-                touch ${MONGO_SHARE}/wait_for_leader
-                USER_CREATED=1
-            fi
-        fi
+    mongo /tmp/setup.js | grep -q "Successfully added user"
+    if [ $? -eq 0 ]; then
+        echo "INFO: Admin user created"
+        touch /tmp/.usercreated
+    else
+        echo "WARNING: Admin user creation failed"
     fi
-
-    if [ $USER_CREATED  -eq 0 ]; then
-        echo "Somebody else created the admin user"
-        #sleep 5
-    fi
-}
-
-function userlock {
-    exec 200> ${LOCKFILE}
-    flock -n 200 && return 0 || return 1
 }
 
 function create_keyfile_if_missing {
@@ -103,6 +88,15 @@ function create_keyfile_if_missing {
     #chmod 600 ${LOCAL_KEYFILE}
 }
 
+function wait_for_keyfile {
+    SHARE_KEYFILE=${MONGO_SHARE}/mongodb-keyfile
+    while [ ! -f ${SHARE_KEYFILE} ]
+    do
+        echo "Waiting for the share keyfile to exist"
+        sleep 10
+    done
+}
+
 function configure_supervisor {
     [ -z $REPLICA_SET ] && REPLICA_SET="rs0"
     echo "Mongo will start in replica set '$REPLICA_SET'"
@@ -110,10 +104,17 @@ function configure_supervisor {
            -e "s|<MONGO_SHARE>|$MONGO_SHARE|" /etc/supervisor/conf.d/mongod.conf
 }
 
-LOCKFILE=${MONGO_SHARE}/.userlock
+if [ $(ls /var/lib/mongodb/ | wc -l) -eq 0 ]
+then
+    if [ ! -z $FIRST_PRIMARY ] && [ ${FIRST_PRIMARY,,} == "true" ]
+    then
+        start_mongod
+        ensure_adminuser_exists
+        stop_mongod
+        create_keyfile_if_missing
+    else
+        wait_for_keyfile
+    fi
+fi
 
-start_mongod
-ensure_adminuser_exists
-stop_mongod
-create_keyfile_if_missing
 configure_supervisor

@@ -1,46 +1,13 @@
 #!/usr/bin/env bash
 
-function wait_for_mongod_logline {
-    # Wait for log line
-    LOGLINE=$1
-    MAXLOOPS=100
-    while [ $(tail -5 /var/log/mongodb/mongod.log | grep -q "$LOGLINE" && echo "Y" || echo "N") == "N" ] && [ $MAXLOOPS -gt 0 ]; do
-        sleep 0.1
-        MAXLOOPS=$(expr $MAXLOOPS - 1)
-        echo -n "."
-    done
-    echo
-}
-
 function wait_for_mongod_to_start {
-    wait_for_mongod_logline "waiting for connections on port"
-}
-
-function lock {
-    exec 200> ${LOCKFILE}
-    flock -n 200 && return 0 || return 1
-}
-
-function unlock {
-    rm -f $LOCKFILE
-    echo "Released lock"
+    echo "Giving mongo time to start..."
+    sleep 3
 }
 
 function setup_mongo_js_scripts {
     sed -i -e "s|<ADMINUSER>|$ADMINUSER|" \
            -e "s|<ADMINPASS>|$ADMINPASS|" $MONGO_SCRIPTS/*.js
-}
-
-function purge_dead_hosts {
-    FOUND=0
-    for OLD_HOSTPATH in $(find ${REPLICA_SET_HOME} -type f -mmin +1)
-    do
-        echo "Removing old heartbeat file for dead host "$(basename $OLD_HOSTPATH)
-        rm -f $OLD_HOSTPATH
-        OLD_HOST=$(basename ${OLD_HOSTPATH})
-        FOUND=1
-    done
-    [ $FOUND -eq 1 ] && mongo ${MONGO_SCRIPTS}/purge_old_hosts.js
 }
 
 function initiate_rs {
@@ -60,56 +27,28 @@ function initiate_rs {
     done
 }
 
-function maybe_become_primary {
-    lock
-    if [ $? -eq 0 ] ; then
-        echo "Got lock"
-        purge_dead_hosts
-
-        HOST_COUNT=$(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $HOSTNAME | wc -l)
-        if [ $HOST_COUNT -eq 0 ]; then
-            echo "No other hosts appear to be alive, so setting myself as primary"
-            initiate_rs 60
-        fi
-
-    fi
-    unlock
-}
-
 function get_replica_status {
     export STATUS=$(mongo ${MONGO_SCRIPTS}/get_replica_status.js | egrep "PRIMARY|SECONDARY|UNKNOWN" | sed 's/"//g')
     if [ -z $STATUS ]; then
         echo "STATUS was null, setting to UNKNOWN"
         STATUS="UNKNOWN"
-    else
-        echo "STATUS is $STATUS"
+    #else
+    #    echo "STATUS is $STATUS"
     fi
 }
 
 function add_secondaries {
     mongo ${MONGO_SCRIPTS}/get_members.js > /tmp/current_members.txt
 
-    for CURRENT_HOSTPATH in $(find ${REPLICA_SET_HOME} -type f -mmin -1 | grep -v $HOSTNAME)
+    for SECONDARY in $SECONDARY_ONE $SECONDARY_TWO
     do
-        CURRENT_HOST=$(cat ${CURRENT_HOSTPATH})
-        echo "Found heartbeat file for host $CURRENT_HOST"
-        grep -q $CURRENT_HOST /tmp/current_members.txt
+        grep -q $SECONDARY /tmp/current_members.txt
         if [ $? -eq 1 ]; then
-            echo "Host '$CURRENT_HOST' is not a member - adding it"
-            sed "s/<HOSTNAME>/$CURRENT_HOST/" ${MONGO_SCRIPTS}/add_host.js > /tmp/add_host.js
+            echo "Host '$SECONDARY' is not a member - adding it"
+            sed "s/<HOSTNAME>/$SECONDARY/" ${MONGO_SCRIPTS}/add_host.js > /tmp/add_host.js
             mongo /tmp/add_host.js
         fi
     done
-}
-
-function do_primary_stuff {
-    lock
-    if [ $? -eq 0 ] ; then
-        echo "Got lock"
-        purge_dead_hosts
-        add_secondaries
-    fi
-    unlock
 }
 
 function try_unknown_fix {
@@ -117,57 +56,52 @@ function try_unknown_fix {
 }
 
 function first_primary {
-    if [ -f /tmp/.usercreated ]; then
+    if [ ! -z $FIRST_PRIMARY ] && [ ${FIRST_PRIMARY,,} == "true" ] && [ -f /tmp/.usercreated ]
+    then
         rm /tmp/.usercreated
-        maybe_become_primary
-        rm ${MONGO_SHARE}/wait_for_leader
-    else
-        echo "Waiting for other host to become primary"
-        while [ -f ${MONGO_SHARE}/wait_for_leader ]
-        do
-            echo -n .
-            sleep 1
-        done
+        initiate_rs 60
+        add_secondaries
     fi
 }
 
-function hearbeat {
-    WAIT_DURATION=10
+function monitor_mongodb {
+    LAST_STATUS=nostatusyet
     UNKNOWN_COUNTER=0
     while [ 1 ]; do
-        # Tell all hosts we are alive, and where to find us...
-        echo $SHORT_HOSTNAME > $HOSTPATH
         # Work out what our responsibilities are
         get_replica_status
         if [ $STATUS == "PRIMARY" ]; then
-            do_primary_stuff
+            add_secondaries
+            if [ $STATUS != $LAST_STATUS ]; then
+                echo
+                echo "Changed state to PRIMARY"
+                echo
+            fi
         elif [ $STATUS == "UNKNOWN" ]; then
             if [ $UNKNOWN_COUNTER -lt 6 ]; then
+                echo
                 echo "Not PRIMARY or SECONDARY yet"
-                maybe_become_primary
+                echo
                 UNKNOWN_COUNTER=$(expr $UNKNOWN_COUNTER + 1)
             else
                 try_unknown_fix
                 UNKNOWN_COUNTER=0
             fi
         else
-            # SECONDARY
-            WAIT_DURATION=30
+            if [ $STATUS != $LAST_STATUS ]; then
+                echo
+                echo "Changed state to SECONDARY"
+                echo
+            fi
         fi
-        sleep $WAIT_DURATION
+        LAST_STATUS=$STATUS
+        sleep 10
     done
 }
 
-REPLICA_SET_HOME=${MONGO_SHARE}/${REPLICA_SET}
-mkdir -p ${REPLICA_SET_HOME}
-HOSTNAME=$(hostname)
 SHORT_HOSTNAME=$(hostname | cut -d \- -f 1) # mongo1-1-1234 becomes mongo1
-#SERVICE_IP=$(set | grep -i ${SHORT_HOSTNAME}_SERVICE_HOST | cut -d = -f2)
-#[ -z $SERVICE_IP ] && SERVICE_IP=$HOSTNAME # Fallback for local testing
-HOSTPATH=${REPLICA_SET_HOME}/${HOSTNAME}
-LOCKFILE=${MONGO_SHARE}/alockfile
 
 setup_mongo_js_scripts
 wait_for_mongod_to_start
 first_primary
-hearbeat
+monitor_mongodb
