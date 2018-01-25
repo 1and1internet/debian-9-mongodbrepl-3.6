@@ -79,13 +79,10 @@ EOF
 function create_keyfile_if_missing {
     # Taken from https://docs.mongodb.com/v2.6/tutorial/deploy-replica-set-with-auth/
     SHARE_KEYFILE=${MONGO_SHARE}/mongodb-keyfile
-    LOCAL_KEYFILE=${MONGO_LOCAL}/mongodb-keyfile
     if [ ! -f ${SHARE_KEYFILE} ]; then
         openssl rand -base64 741 > ${SHARE_KEYFILE}
         chmod 600 ${SHARE_KEYFILE}
     fi
-    #cp ${SHARE_KEYFILE} ${LOCAL_KEYFILE}
-    #chmod 600 ${LOCAL_KEYFILE}
 }
 
 function wait_for_keyfile {

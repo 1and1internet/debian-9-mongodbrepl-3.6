@@ -3,7 +3,6 @@ MAINTAINER brian.wilkinson@1and1.co.uk
 COPY files/ /
 
 ARG MONGO_SHARE=/mongoshare
-ARG MONGO_LOCAL=/mongolocal
 ARG MONGO_SCRIPTS=/usr/local/mongo_scripts
 
 RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
@@ -17,12 +16,10 @@ RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
 	&& rm -rf /var/lib/apt/lists/* \
 	&& mkdir -p /var/log/mongodb \
 				${MONGO_SHARE} \
-				${MONGO_LOCAL} \
 	&& chmod -R 777 /var/log/mongodb \
 					/var/lib/mongodb \
 					/etc/supervisor/conf.d \
 					${MONGO_SHARE} \
-					${MONGO_LOCAL} \
 					${MONGO_SCRIPTS} \
 	&& chmod +x /usr/local/bin/setup_replica
 
@@ -31,5 +28,4 @@ ENV ADMINUSER=defaultadminuser \
 	REPLICA_SET=rs0 \
 	MONGO_SHARE=${MONGO_SHARE} \
 	HOME=${MONGO_SHARE} \
-	MONGO_SCRIPTS=${MONGO_SCRIPTS} \
-	MONGO_LOCAL=${MONGO_LOCAL}
+	MONGO_SCRIPTS=${MONGO_SCRIPTS}
