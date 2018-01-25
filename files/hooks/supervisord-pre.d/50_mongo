@@ -104,7 +104,7 @@ function configure_supervisor {
            -e "s|<MONGO_SHARE>|$MONGO_SHARE|" /etc/supervisor/conf.d/mongod.conf
 }
 
-if [ $(ls /var/lib/mongodb/ | wc -l) -eq 0 ]
+if [ $(ls /var/lib/mongodb/ | grep -v "lost+found" | wc -l) -eq 0 ]
 then
     if [ ! -z $FIRST_PRIMARY ] && [ ${FIRST_PRIMARY,,} == "true" ]
     then
