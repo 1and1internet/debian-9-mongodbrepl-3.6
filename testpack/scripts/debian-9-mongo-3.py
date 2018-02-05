@@ -9,27 +9,9 @@ from testpack_helper_library.unittests.dockertests import Test1and1Common
 
 
 class Test1and1MongoImage(Test1and1Common):
-    container_ip = None
-
     @classmethod
     def setUpClass(cls):
-        image_to_test = os.getenv("IMAGE_NAME")
-        if image_to_test == "":
-            raise Exception("I don't know what image to test")
-        client = docker.from_env()
-        Test1and1Common.container = client.containers.run(
-            image=image_to_test,
-            remove=True,
-            detach=True,
-            network_mode="bridge",
-            user=10000,
-            ports={8080:8080},
-            working_dir="/var/www",
-            environment={"FIRST_PRIMARY": "true"}
-        )
-
-        details = docker.APIClient().inspect_container(container=Test1and1Common.container.id)
-        Test1and1MongoImage.container_ip = details['NetworkSettings']['IPAddress']
+        Test1and1Common.setUpClass(environment={"FIRST_PRIMARY": "true"})
         time.sleep(5) # Container needs time to start, stop, then restart mongodb before we test.
 
     # <tests to run>
